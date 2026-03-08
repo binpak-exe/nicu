@@ -233,6 +233,7 @@
                         <div class="mt-auto bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
                             <span class="block text-sm text-teal-800 font-bold mb-1">Calculated GIR (mg/kg/min):</span>
                             <span id="gir-result" class="text-3xl font-black text-teal-600">0.00</span>
+                            <p id="gir-interpretation" class="text-xs font-medium text-teal-700 mt-2">Enter values to calculate GIR.</p>
                         </div>
                     </div>
                 </div>
@@ -271,6 +272,7 @@
                                 <span class="text-sm font-bold text-teal-800">TPN Hourly Rate:</span>
                                 <span id="tpn-rate" class="text-xl font-black text-teal-600">0.0 ml/hr</span>
                             </div>
+                            <p id="tpn-warning" class="text-xs text-rose-700 font-medium hidden">Non-TPN fluids exceed total volume goal. Reduce enteral/lipid inputs.</p>
                         </div>
                     </div>
                 </div>
@@ -295,6 +297,9 @@
                             <span class="text-xs uppercase tracking-wider text-slate-300">Increase per feed by</span>
                             <span id="feed-result" class="font-bold text-lg leading-none mt-1">0 ml</span>
                         </div>
+                    </div>
+                    <div class="mt-4 flex justify-end">
+                        <button onclick="resetCalculators()" class="text-sm px-3 py-2 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-colors">Reset calculator fields</button>
                     </div>
                 </div>
 
@@ -628,6 +633,8 @@
                 renderNutritionChart();
                 window.nutritionChartRendered = true;
             }
+
+            localStorage.setItem('nicu-active-section', sectionId);
         }
 
         // --- Calculator Logic ---
@@ -636,6 +643,7 @@
             const dex = parseFloat(document.getElementById('gir-dex').value);
             const wt = parseFloat(document.getElementById('gir-wt').value);
             const resultEl = document.getElementById('gir-result');
+            const interpretationEl = document.getElementById('gir-interpretation');
 
             if (vol > 0 && dex > 0 && wt > 0) {
                 // Formula: (TPN Vol * % Dextrose decimal) / (Weight * 1.44)
@@ -643,13 +651,29 @@
                 resultEl.innerText = gir.toFixed(2);
                 
                 // Color coding based on goal (4-12)
-                if(gir < 4) resultEl.className = "text-3xl font-black text-amber-500";
-                else if(gir > 12) resultEl.className = "text-3xl font-black text-rose-600";
-                else resultEl.className = "text-3xl font-black text-teal-600";
+                if(gir < 4) {
+                    resultEl.className = "text-3xl font-black text-amber-500";
+                    interpretationEl.className = "text-xs font-medium text-amber-700 mt-2";
+                    interpretationEl.innerText = "Low GIR for initial target range (4-6 mg/kg/min).";
+                }
+                else if(gir > 12) {
+                    resultEl.className = "text-3xl font-black text-rose-600";
+                    interpretationEl.className = "text-xs font-medium text-rose-700 mt-2";
+                    interpretationEl.innerText = "Above typical upper target (10-12 mg/kg/min).";
+                }
+                else {
+                    resultEl.className = "text-3xl font-black text-teal-600";
+                    interpretationEl.className = "text-xs font-medium text-teal-700 mt-2";
+                    interpretationEl.innerText = "Within standard GIR target range.";
+                }
             } else {
                 resultEl.innerText = "0.00";
                 resultEl.className = "text-3xl font-black text-teal-600";
+                interpretationEl.className = "text-xs font-medium text-teal-700 mt-2";
+                interpretationEl.innerText = "Enter values to calculate GIR.";
             }
+
+            saveCalculatorInputs();
         }
 
         function calculateTPN() {
@@ -657,6 +681,7 @@
             const wt = parseFloat(document.getElementById('tpn-wt').value) || 0;
             const enteral = parseFloat(document.getElementById('tpn-enteral').value) || 0;
             const lipids = parseFloat(document.getElementById('tpn-lipids').value) || 0;
+            const warningEl = document.getElementById('tpn-warning');
             
             if (tfg > 0 && wt > 0) {
                 const totalVol = tfg * wt;
@@ -665,10 +690,14 @@
 
                 document.getElementById('tpn-total-vol').innerText = totalVol.toFixed(1) + " ml/day";
                 document.getElementById('tpn-rate').innerText = hourlyRate > 0 ? hourlyRate.toFixed(1) + " ml/hr" : "0.0 ml/hr";
+                warningEl.classList.toggle('hidden', tpnVol >= 0);
             } else {
                 document.getElementById('tpn-total-vol').innerText = "0 ml/day";
                 document.getElementById('tpn-rate').innerText = "0.0 ml/hr";
+                warningEl.classList.add('hidden');
             }
+
+            saveCalculatorInputs();
         }
 
         function calculateFeed() {
@@ -682,6 +711,51 @@
             } else {
                 document.getElementById('feed-result').innerText = "0 ml";
             }
+
+            saveCalculatorInputs();
+        }
+
+        function saveCalculatorInputs() {
+            const fields = ['gir-vol', 'gir-dex', 'gir-wt', 'tpn-tfg', 'tpn-wt', 'tpn-enteral', 'tpn-lipids', 'feed-inc', 'feed-wt'];
+            const state = {};
+
+            fields.forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) state[id] = el.value;
+            });
+
+            localStorage.setItem('nicu-calculators', JSON.stringify(state));
+        }
+
+        function loadCalculatorInputs() {
+            const saved = localStorage.getItem('nicu-calculators');
+            if (!saved) return;
+
+            try {
+                const state = JSON.parse(saved);
+                Object.entries(state).forEach(([id, value]) => {
+                    const el = document.getElementById(id);
+                    if (el && typeof value === 'string') el.value = value;
+                });
+            } catch {
+                localStorage.removeItem('nicu-calculators');
+            }
+        }
+
+        function resetCalculators() {
+            ['gir-vol', 'gir-dex', 'gir-wt', 'tpn-tfg', 'tpn-wt', 'tpn-enteral', 'tpn-lipids', 'feed-wt'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            document.getElementById('feed-inc').value = '10';
+            document.getElementById('tpn-enteral').value = '0';
+            document.getElementById('tpn-lipids').value = '0';
+
+            calculateGIR();
+            calculateTPN();
+            calculateFeed();
+            localStorage.removeItem('nicu-calculators');
         }
 
         // --- Hypoglycemia Wizard Logic ---
@@ -831,6 +905,17 @@
                 }
             });
         }
+
+        // --- Startup State ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCalculatorInputs();
+            calculateGIR();
+            calculateTPN();
+            calculateFeed();
+
+            const preferredSection = localStorage.getItem('nicu-active-section') || 'home';
+            nav(preferredSection);
+        });
     </script>
 </body>
 </html>
