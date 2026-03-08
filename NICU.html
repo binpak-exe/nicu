@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NICU Resident Digital Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Chosen Palette: Slate (calm/neutral background), Teal (primary action/trust), Rose (urgent/warnings), Amber (cautions) -->
+    <!-- Application Structure Plan: The SPA is structured as a sidebar-navigated dashboard, tailored for rapid access in a high-stress clinical environment. 
+         Sections are thematic: 
+         1. 'Dashboard/Home' for daily workflow and quick rounding templates.
+         2. 'Clinical Calculators' transforming static math into interactive tools for immediate clinical use (GIR, TPN).
+         3. 'Emergency Flows' grouping time-critical algorithms (NRP, Hypoglycemia) into interactive, step-wise formats to prevent cognitive overload.
+         4. 'Nutrition & Protocols' visualizing fluid/lipid goals with Chart.js and detailing feeding rules.
+         5. 'Checklists & Rules' consolidating unit regulations and milestone tracking into interactive task lists. 
+         This non-linear architecture allows a resident to instantly pull up precisely what they need based on the clinical situation at hand. -->
+    <!-- Visualization & Content Choices: 
+         1. Fluid/Lipid Goals -> Goal: Compare/Change -> Viz: Chart.js Bar/Line Combo Chart -> Justification: Shows the daily progression of fluids vs. lipids visually better than a static table. 
+         2. Hypoglycemia Algorithm -> Goal: Inform/Process -> Viz: Interactive HTML/CSS Wizard -> Justification: Replaces complex text trees with a step-by-step interactive decision tool, critical for emergencies. NO SVG/Mermaid used.
+         3. Math Mastery -> Goal: Inform/Compute -> Viz: Interactive JS Calculators -> Justification: Eliminates manual math errors for GIR and TPN rates. 
+         4. Daily Workflow -> Goal: Organize -> Viz: Vertical CSS Timeline -> Justification: Clear chronological grouping of daily tasks. NO SVG used.
+         5. Checklists -> Goal: Organize/Track -> Viz: HTML Checkboxes with progress bars -> Justification: Gamifies and tracks discharge and competency goals. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        /* Custom Styles for Interactive Elements & Chart Containers */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        .chart-container { 
+            position: relative; 
+            width: 100%; 
+            max-width: 800px; 
+            margin-left: auto; 
+            margin-right: auto; 
+            height: 40vh; 
+            max-height: 400px; 
+            min-height: 300px;
+        }
+
+        /* Timeline styling without SVG */
+        .timeline-border {
+            border-left: 4px solid #0d9488; /* teal-600 */
+            position: absolute;
+            height: 100%;
+            left: 14px;
+            top: 0;
+        }
+        .timeline-dot {
+            width: 32px;
+            height: 32px;
+            background-color: #0d9488;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            position: relative;
+            z-index: 10;
+        }
+
+        /* Hide scrollbar for clean sidebar */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 flex h-screen overflow-hidden">
+
+    <!-- Sidebar Navigation -->
+    <nav class="w-64 bg-slate-900 text-slate-300 flex flex-col h-full shadow-xl z-20 shrink-0 hidden md:flex">
+        <div class="p-6 bg-slate-950 flex items-center gap-3">
+            <span class="text-2xl">👶</span>
+            <h1 class="text-xl font-bold text-white leading-tight">NICU Star<br><span class="text-sm font-normal text-teal-400">Resident Guide</span></h1>
+        </div>
+        <div class="flex-1 overflow-y-auto no-scrollbar py-4">
+            <ul class="space-y-1">
+                <li><button onclick="nav('home')" id="nav-home" class="w-full text-left px-6 py-3 hover:bg-slate-800 hover:text-white transition-colors bg-slate-800 text-white border-l-4 border-teal-500">📅 Workflow & Rounds</button></li>
+                <li><button onclick="nav('calculators')" id="nav-calculators" class="w-full text-left px-6 py-3 hover:bg-slate-800 hover:text-white transition-colors border-l-4 border-transparent">🧮 Calculators & Math</button></li>
+                <li><button onclick="nav('emergencies')" id="nav-emergencies" class="w-full text-left px-6 py-3 hover:bg-slate-800 hover:text-white transition-colors border-l-4 border-transparent">🩸 Emergencies & NRP</button></li>
+                <li><button onclick="nav('nutrition')" id="nav-nutrition" class="w-full text-left px-6 py-3 hover:bg-slate-800 hover:text-white transition-colors border-l-4 border-transparent">🥗 Nutrition & TPN</button></li>
+                <li><button onclick="nav('checklists')" id="nav-checklists" class="w-full text-left px-6 py-3 hover:bg-slate-800 hover:text-white transition-colors border-l-4 border-transparent">🎓 Rules & Checklists</button></li>
+            </ul>
+        </div>
+        <div class="p-4 bg-slate-950 text-xs text-slate-500 text-center">
+            McLaren PGY-1 Rotation
+        </div>
+    </nav>
+
+    <!-- Mobile Header -->
+    <div class="md:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 flex justify-between items-center z-30 shadow-md">
+        <div class="flex items-center gap-2">
+            <span class="text-xl">👶</span>
+            <span class="font-bold">NICU Guide</span>
+        </div>
+        <select onchange="nav(this.value)" class="bg-slate-800 text-white border border-slate-700 rounded p-1">
+            <option value="home">Workflow & Rounds</option>
+            <option value="calculators">Calculators & Math</option>
+            <option value="emergencies">Emergencies & NRP</option>
+            <option value="nutrition">Nutrition & TPN</option>
+            <option value="checklists">Rules & Checklists</option>
+        </select>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 h-full overflow-y-auto bg-slate-50 pt-16 md:pt-0 pb-12">
+        
+        <!-- SECTION: Workflow & Rounds (Home) -->
+        <section id="sec-home" class="p-4 md:p-8 max-w-6xl mx-auto block view-section">
+            <div class="mb-8">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Daily Workflow & Rounding</h2>
+                <p class="text-slate-600">This section outlines your daily chronological expectations and provides the standard template for presenting patients to the attending neonatologist. Use this to structure your morning routine and ensure you miss no critical updates during rounds.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Timeline -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h3 class="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><span>⏰</span> Daily Timeline</h3>
+                    <div class="relative pl-4">
+                        <div class="timeline-border"></div>
+                        
+                        <div class="relative mb-6 flex gap-4">
+                            <div class="timeline-dot text-sm font-bold shadow-sm">07</div>
+                            <div class="pt-1">
+                                <h4 class="font-bold text-slate-900">07:00 - Shift Starts</h4>
+                                <p class="text-sm text-slate-600 mt-1">Immediate chart review on EPIC.</p>
+                            </div>
+                        </div>
+
+                        <div class="relative mb-6 flex gap-4">
+                            <div class="timeline-dot text-sm font-bold shadow-sm">08</div>
+                            <div class="pt-1">
+                                <h4 class="font-bold text-slate-900">07:30 - 09:30 - Pre-Rounding</h4>
+                                <p class="text-sm text-slate-600 mt-1">See babies, talk to nurses, check PE focus areas.</p>
+                            </div>
+                        </div>
+
+                        <div class="relative mb-6 flex gap-4">
+                            <div class="timeline-dot text-sm font-bold shadow-sm">09</div>
+                            <div class="pt-1">
+                                <h4 class="font-bold text-slate-900">09:15 - Morning Huddle</h4>
+                                <p class="text-sm text-slate-600 mt-1">Attend with Attendings, Charge, RT. Clean phone.</p>
+                                
+                                <h4 class="font-bold text-slate-900 mt-4">09:30 - Rounds</h4>
+                                <p class="text-sm text-slate-600 mt-1">Present plan. Check for physical changes.</p>
+                            </div>
+                        </div>
+
+                        <div class="relative mb-6 flex gap-4">
+                            <div class="timeline-dot text-sm font-bold shadow-sm">14</div>
+                            <div class="pt-1">
+                                <h4 class="font-bold text-slate-900">14:00 - Short Call Ends</h4>
+                                <p class="text-sm text-slate-600 mt-1">Finish routine work.</p>
+                            </div>
+                        </div>
+
+                        <div class="relative mb-6 flex gap-4">
+                            <div class="timeline-dot text-sm font-bold shadow-sm">17</div>
+                            <div class="pt-1">
+                                <h4 class="font-bold text-slate-900">17:00 - Long Call Sign-out</h4>
+                                <p class="text-sm text-slate-600 mt-1">Hand over to NPs. Keep phone for orders.</p>
+                            </div>
+                        </div>
+
+                        <div class="relative flex gap-4">
+                            <div class="timeline-dot text-sm font-bold shadow-sm">18</div>
+                            <div class="pt-1">
+                                <h4 class="font-bold text-slate-900">18:00 - The "Hung" Time</h4>
+                                <p class="text-sm text-slate-600 mt-1">New TPN bags are hung. Morning labs reflect ~14hrs of new TPN.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rounding Template & Quick Hits -->
+                <div class="space-y-6">
+                    <div class="bg-teal-50 border border-teal-200 rounded-xl p-6 shadow-sm">
+                        <h3 class="text-xl font-bold text-teal-900 mb-4 flex items-center gap-2"><span>📊</span> Rounding Presentation (Week 1 Goal)</h3>
+                        <ol class="list-decimal list-inside space-y-3 text-teal-800">
+                            <li><strong>Identity:</strong> "Baby [Name] is [X] days old, born at [GA]. Corrected age is [CGA]."</li>
+                            <li><strong>Respiratory:</strong> "On [CPAP/Room Air] at [Settings/FiO2]. [X] overnight events (A/B/D)."</li>
+                            <li><strong>GI/Nutrition:</strong> "Total intake [X] ml. Nippled [X]% / NG [X]%. [X] urines/stools. [X] emesis."</li>
+                            <li><strong>Labs/Imaging:</strong> Mention Monday labs or recent imaging/cardiology.</li>
+                            <li><strong>The Plan:</strong> "Today we will [Wean CPAP / Advance feeds / Change TPN]."</li>
+                        </ol>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2"><span>🗓️</span> Weekly Rituals</h3>
+                        <div class="flex items-start gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <span class="text-2xl">🩸</span>
+                            <div>
+                                <h4 class="font-bold text-slate-700">Monday Ritual</h4>
+                                <p class="text-sm text-slate-600">Weekly Labs (CBC/Basic) for ALL babies.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Calculators & Math -->
+        <section id="sec-calculators" class="p-4 md:p-8 max-w-6xl mx-auto hidden view-section">
+            <div class="mb-8">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Clinical Calculators & Math Mastery</h2>
+                <p class="text-slate-600">This section converts essential NICU formulas into interactive tools. Use these calculators during rounds or order entry to quickly determine Glucose Infusion Rates (GIR), daily TPN volumes, and feed advancements safely.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                <!-- GIR Calculator -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div class="bg-slate-800 p-4 text-white">
+                        <h3 class="text-lg font-bold flex items-center gap-2"><span>🧪</span> Glucose Infusion Rate (GIR)</h3>
+                        <p class="text-xs text-slate-300">Goal: Start 4-6, advance up to 10-12 mg/kg/min.</p>
+                    </div>
+                    <div class="p-6 flex-1 flex flex-col">
+                        <div class="space-y-4 mb-6">
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">TPN Daily Volume (mL/day)</label>
+                                <input type="number" id="gir-vol" class="w-full border border-slate-300 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500" placeholder="e.g. 150" oninput="calculateGIR()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">% Dextrose (Decimal)</label>
+                                <input type="number" step="0.01" id="gir-dex" class="w-full border border-slate-300 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500" placeholder="e.g. 0.10 for D10" oninput="calculateGIR()">
+                                <p class="text-xs text-slate-500 mt-1">Peripheral max is 0.125 (12.5%)</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Weight (kg)</label>
+                                <input type="number" step="0.01" id="gir-wt" class="w-full border border-slate-300 rounded-md p-2 focus:ring-teal-500 focus:border-teal-500" placeholder="e.g. 1.8" oninput="calculateGIR()">
+                            </div>
+                        </div>
+                        <div class="mt-auto bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
+                            <span class="block text-sm text-teal-800 font-bold mb-1">Calculated GIR (mg/kg/min):</span>
+                            <span id="gir-result" class="text-3xl font-black text-teal-600">0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TPN Order Calculator -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div class="bg-slate-800 p-4 text-white">
+                        <h3 class="text-lg font-bold flex items-center gap-2"><span>💧</span> TPN Rate & Feed Advance</h3>
+                        <p class="text-xs text-slate-300">Subtract non-TPN fluids from total fluid goal.</p>
+                    </div>
+                    <div class="p-6 flex-1 flex flex-col">
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">TFG (ml/kg/day)</label>
+                                <input type="number" id="tpn-tfg" class="w-full border border-slate-300 rounded-md p-2" placeholder="80-160" oninput="calculateTPN()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Weight (kg)</label>
+                                <input type="number" step="0.01" id="tpn-wt" class="w-full border border-slate-300 rounded-md p-2" placeholder="e.g. 1.5" oninput="calculateTPN()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Enteral (ml/day)</label>
+                                <input type="number" id="tpn-enteral" class="w-full border border-slate-300 rounded-md p-2" value="0" oninput="calculateTPN()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-700 mb-1">Lipids/Other (ml/day)</label>
+                                <input type="number" id="tpn-lipids" class="w-full border border-slate-300 rounded-md p-2" value="0" oninput="calculateTPN()">
+                            </div>
+                        </div>
+                        <div class="mt-auto space-y-3">
+                            <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 flex justify-between items-center">
+                                <span class="text-sm font-bold text-slate-700">Total Volume Goal:</span>
+                                <span id="tpn-total-vol" class="font-bold text-slate-900">0 ml/day</span>
+                            </div>
+                            <div class="bg-teal-50 border border-teal-200 rounded-lg p-3 flex justify-between items-center">
+                                <span class="text-sm font-bold text-teal-800">TPN Hourly Rate:</span>
+                                <span id="tpn-rate" class="text-xl font-black text-teal-600">0.0 ml/hr</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feed Advancement Widget -->
+                <div class="md:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">Enteral Feed Advancement (Q3H Feeds)</h3>
+                    <div class="flex flex-col md:flex-row gap-4 items-end">
+                        <div class="flex-1 w-full">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Daily Increase Goal (ml/kg/day)</label>
+                            <select id="feed-inc" class="w-full border border-slate-300 rounded-md p-2" onchange="calculateFeed()">
+                                <option value="10">10 ml/kg/day</option>
+                                <option value="15">15 ml/kg/day</option>
+                                <option value="20">20 ml/kg/day</option>
+                            </select>
+                        </div>
+                        <div class="flex-1 w-full">
+                            <label class="block text-sm font-bold text-slate-700 mb-1">Current Weight (kg)</label>
+                            <input type="number" step="0.01" id="feed-wt" class="w-full border border-slate-300 rounded-md p-2" placeholder="Required" oninput="calculateFeed()">
+                        </div>
+                        <div class="bg-slate-800 text-white rounded-lg p-2 px-6 flex flex-col justify-center items-center w-full md:w-auto h-10 md:h-[42px]">
+                            <span class="text-xs uppercase tracking-wider text-slate-300">Increase per feed by</span>
+                            <span id="feed-result" class="font-bold text-lg leading-none mt-1">0 ml</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- SECTION: Emergencies & NRP -->
+        <section id="sec-emergencies" class="p-4 md:p-8 max-w-6xl mx-auto hidden view-section">
+            <div class="mb-8">
+                <h2 class="text-3xl font-bold text-rose-700 mb-2">Emergencies & Resuscitation</h2>
+                <p class="text-slate-600">Crucial algorithms for high-stress situations. Use the interactive Hypoglycemia tool to determine exact next steps based on blood glucose and symptoms, or reference the NRP timeline during deliveries.</p>
+            </div>
+
+            <!-- Hypoglycemia Interactive Wizard -->
+            <div class="bg-white rounded-xl shadow-sm border border-rose-200 overflow-hidden mb-8">
+                <div class="bg-rose-700 p-4 text-white">
+                    <h3 class="text-xl font-bold flex items-center gap-2"><span>🩸</span> Hypoglycemia Management Algorithm</h3>
+                    <p class="text-sm text-rose-100">Goal: Maintain Glucose > 45 mg/dL (Pre-feed). Screening @ 1-2 hours of life.</p>
+                </div>
+                
+                <div class="p-6 bg-rose-50/30">
+                    <!-- Step 1: Symptoms -->
+                    <div id="hypo-step-1" class="text-center">
+                        <h4 class="text-lg font-bold text-slate-800 mb-4">Is the infant Symptomatic?</h4>
+                        <p class="text-sm text-slate-500 mb-6">(Jittery, Lethargic, Cyanosis, Seizures)</p>
+                        <div class="flex justify-center gap-4">
+                            <button onclick="setHypoState('symp', true)" class="px-6 py-3 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-bold shadow-sm transition-colors">Yes, Symptomatic</button>
+                            <button onclick="setHypoState('symp', false)" class="px-6 py-3 bg-white text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 font-bold shadow-sm transition-colors">No, Asymptomatic</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Symptomatic Action -->
+                    <div id="hypo-symp-action" class="hidden text-center py-4">
+                        <div class="bg-rose-100 border border-rose-300 rounded-xl p-6 inline-block text-left shadow-sm">
+                            <h4 class="text-rose-800 font-bold text-xl mb-3 border-b border-rose-200 pb-2">🚨 IMMEDIATE ACTION REQUIRED</h4>
+                            <ul class="space-y-3 font-bold text-slate-800">
+                                <li class="flex gap-2"><span>1️⃣</span> Give IV D10W Bolus (2 ml/kg)</li>
+                                <li class="flex gap-2"><span>2️⃣</span> Start Continuous IV Infusion (GIR 6–8)</li>
+                                <li class="flex gap-2"><span>3️⃣</span> Recheck glucose in 30 minutes</li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-white rounded border border-rose-200 text-sm">
+                                <strong>Rule of 6:</strong> If glucose still low, increase GIR by 2 points (e.g., 6 to 8).
+                            </div>
+                            <button onclick="resetHypo()" class="mt-6 text-sm text-rose-600 underline">Reset Form</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Asymptomatic Glucose Level -->
+                    <div id="hypo-asymp-level" class="hidden text-center">
+                        <h4 class="text-lg font-bold text-slate-800 mb-6">What is the Glucose Level?</h4>
+                        <div class="flex justify-center gap-4 flex-wrap">
+                            <button onclick="setHypoState('level', 'under25')" class="px-6 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-bold shadow-sm transition-colors">&lt; 25 mg/dL</button>
+                            <button onclick="setHypoState('level', 'mid')" class="px-6 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-bold shadow-sm transition-colors">25 - 45 mg/dL</button>
+                            <button onclick="setHypoState('level', 'safe')" class="px-6 py-3 bg-teal-500 text-white rounded-lg hover:bg-teal-600 font-bold shadow-sm transition-colors">&gt; 45 mg/dL</button>
+                        </div>
+                        <button onclick="resetHypo()" class="mt-8 text-sm text-slate-500 underline">Reset Form</button>
+                    </div>
+
+                    <!-- Step 4: Asymptomatic Actions -->
+                    <div id="hypo-asymp-action" class="hidden mt-6 flex justify-center">
+                        <div id="hypo-result-box" class="bg-white border-2 border-slate-200 rounded-xl p-6 text-left shadow-sm w-full max-w-lg">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NRP Quick Reference -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h3 class="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2"><span>🫁</span> NRP Quick-Reference (The Golden Minute)</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="border-l-4 border-teal-500 bg-slate-50 p-4 rounded-r-lg">
+                        <h4 class="font-black text-slate-900 mb-2">0–30 Seconds<br><span class="text-sm font-normal text-slate-500">INITIAL STEPS</span></h4>
+                        <ul class="list-disc list-inside space-y-1 text-sm text-slate-700">
+                            <li>Warm, dry, stimulate.</li>
+                            <li>Position airway, suction (if needed).</li>
+                            <li class="font-bold text-rose-600">Check HR (Listen 6s, multiply x10).</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="border-l-4 border-amber-500 bg-slate-50 p-4 rounded-r-lg">
+                        <h4 class="font-black text-slate-900 mb-2">30–60 Seconds<br><span class="text-sm font-normal text-slate-500">THE ACTION</span></h4>
+                        <ul class="list-disc list-inside space-y-1 text-sm text-slate-700">
+                            <li class="font-bold">HR &lt; 100 or Apneic ⮕ PPV</li>
+                            <li>Room Air (21%) for &ge; 35w</li>
+                            <li>21–30% O2 for &lt; 35w</li>
+                            <li><strong>MR. SOPA</strong> if chest not rising.</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="border-l-4 border-rose-600 bg-rose-50 p-4 rounded-r-lg">
+                        <h4 class="font-black text-slate-900 mb-2">&gt; 60 Seconds<br><span class="text-sm font-normal text-slate-500">THE CRITICALS</span></h4>
+                        <ul class="list-disc list-inside space-y-1 text-sm text-slate-700">
+                            <li class="font-bold text-rose-700">HR &lt; 60 ⮕ Compressions (3:1)</li>
+                            <li>Increase O2 to 100%.</li>
+                            <li>Intubate / Laryngeal Mask.</li>
+                            <li>Epinephrine if HR still &lt; 60.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- SECTION: Nutrition & TPN -->
+        <section id="sec-nutrition" class="p-4 md:p-8 max-w-6xl mx-auto hidden view-section">
+            <div class="mb-8">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Nutrition, Fluids & TPN Protocols</h2>
+                <p class="text-slate-600">Explore the daily advancement goals for fluids and lipids, required lab monitoring, and TPN order logic. Proper nutrition management is critical for preventing NEC and ensuring appropriate weight gain (10-20 g/kg/day).</p>
+            </div>
+
+            <!-- Visualization: Fluid/Lipid Chart -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+                <h3 class="text-xl font-bold text-slate-800 mb-2">Daily Fluid & Lipid Advancement Goals</h3>
+                <p class="text-sm text-slate-500 mb-6">Visualizing the increase from DOL 1 to Maximum capacity for Preterm infants.</p>
+                <div class="chart-container">
+                    <canvas id="nutritionChart"></canvas>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- TPN Template -->
+                <div class="bg-slate-800 text-white rounded-xl shadow-sm p-6">
+                    <h3 class="text-xl font-bold text-teal-400 mb-4 flex items-center gap-2"><span>📝</span> TPN Order Template (EPIC)</h3>
+                    <p class="text-sm text-slate-300 mb-4">Follow this exact sequence for Week 2-3 order entry:</p>
+                    <ol class="space-y-3 text-sm">
+                        <li class="bg-slate-700/50 p-2 rounded border border-slate-600"><strong class="text-white">1. Fluid:</strong> Input TFG (ml/kg). Epic calculates Total.</li>
+                        <li class="bg-slate-700/50 p-2 rounded border border-slate-600"><strong class="text-white">2. Dextrose:</strong> Start GIR 4-6 (Peripheral max 12.5%).</li>
+                        <li class="bg-slate-700/50 p-2 rounded border border-slate-600"><strong class="text-white">3. Protein:</strong> Start Amino Acids @ 3-4 g/kg.</li>
+                        <li class="bg-slate-700/50 p-2 rounded border border-slate-600"><strong class="text-white">4. Lipids:</strong> Start @ 1-2 g/kg (5-10 ml/kg).</li>
+                        <li class="bg-slate-700/50 p-2 rounded border border-slate-600"><strong class="text-white">5. Electrolytes:</strong> Na(2-4), K(2-3), Ca(200-500), Mg(0.3-0.5). *Wait for DOL 2-3 for Na/K*.</li>
+                        <li class="bg-slate-700/50 p-2 rounded border border-slate-600"><strong class="text-white">6. Additives:</strong> Heparin (if PICC 0.5 u/ml), Zinc, Levocarnitine (if BW < 1kg).</li>
+                    </ol>
+
+                    <div class="mt-6 border-t border-slate-600 pt-4">
+                        <h4 class="font-bold text-rose-300 mb-2">🚨 The "Bridge" (Starter TPN)</h4>
+                        <p class="text-sm">For &lt; 2000g or &lt; 32 weeks: <strong>D5 or D10 + 4g AA + Ca Gluconate + Zinc.</strong> Available in ~1hr.</p>
+                    </div>
+                </div>
+
+                <!-- Quick Hits & Rules -->
+                <div class="space-y-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2"><span>🍼</span> Enteral Feeding Rules</h3>
+                        <ul class="list-disc list-inside space-y-2 text-sm text-slate-700">
+                            <li><strong>Donor Milk:</strong> Use if &lt;30w and no EBM. Stop @ 33w or 1500g.</li>
+                            <li><strong>Trophic Feeds:</strong> 10–20 ml/kg/day. Start preterms after 48h if stable.</li>
+                            <li><strong>NPO Triggers:</strong> Hold during transfusions, PDA treatment (Neoprofen), or poor perfusion (HIE/Dopamine).</li>
+                            <li><strong>Concentration:</strong> 22 kcal @ 80-100 ml/kg; 24 kcal @ 120 ml/kg.</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-bold text-slate-800 mb-3 flex items-center gap-2"><span>☢️</span> Screening & Medical PDA</h3>
+                        <ul class="list-disc list-inside space-y-2 text-sm text-slate-700">
+                            <li><strong>HUS Schedule:</strong> &lt;32w: Days 3, 7, 14, 28. <br>&gt;32w: Days 3, 7, 28.</li>
+                            <li><strong>Neoprofen (PDA):</strong> 10/5/5 mg/kg over 3 days. <strong>Must monitor UOP/Cr and keep NPO.</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: Rules & Checklists -->
+        <section id="sec-checklists" class="p-4 md:p-8 max-w-6xl mx-auto hidden view-section">
+            <div class="mb-8">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Unit Rules & PGY-1 Checklists</h2>
+                <p class="text-slate-600">Track your progress against McLaren PGY-1 curriculum milestones and review criteria for patient discharge. Strict adherence to unit infection control rules is mandatory for patient safety.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Checklists -->
+                <div class="space-y-6">
+                    
+                    <!-- PGY-1 Competency -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-slate-800 flex items-center gap-2"><span>🎓</span> PGY-1 Competencies</h3>
+                            <span id="pgy1-progress" class="text-sm font-bold text-teal-600 bg-teal-50 px-2 py-1 rounded">0/7</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mb-4 italic">Residents must get these met to pass the rotation.</p>
+                        
+                        <div class="space-y-2 text-sm" id="pgy1-list">
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500" onchange="updateChecklist('pgy1')">
+                                <span class="text-slate-700"><strong>APGAR Score:</strong> Give accurate scores during deliveries.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500" onchange="updateChecklist('pgy1')">
+                                <span class="text-slate-700"><strong>Fluid/Nutrition Estimates:</strong> Correctly calculate ml/kg/day requirements.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500" onchange="updateChecklist('pgy1')">
+                                <span class="text-slate-700"><strong>Unstable Newborn:</strong> Recognize signs of HIE, shock, or severe distress.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 bg-amber-50 rounded cursor-pointer border border-amber-200">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500" onchange="updateChecklist('pgy1')">
+                                <span class="text-amber-900"><strong>NRP participation:</strong> Attend <strong>ALL</strong> NRPs while on service.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500" onchange="updateChecklist('pgy1')">
+                                <span class="text-slate-700"><strong>Hypoglycemia:</strong> Manage per protocol.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500" onchange="updateChecklist('pgy1')">
+                                <span class="text-slate-700"><strong>Sepsis:</strong> Properly suspect and initiate workup.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500" onchange="updateChecklist('pgy1')">
+                                <span class="text-slate-700"><strong>Clinical Presentation:</strong> Perfect the 5-part presentation for the Neonatologist.</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Discharge Checklist -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-slate-800 flex items-center gap-2"><span>🏠</span> Discharge (DC) Readiness</h3>
+                            <span id="dc-progress" class="text-sm font-bold text-teal-600 bg-teal-50 px-2 py-1 rounded">0/7</span>
+                        </div>
+                        
+                        <div class="space-y-2 text-sm" id="dc-list">
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600" onchange="updateChecklist('dc')">
+                                <span class="text-slate-700">Nippling 100% of feeds.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600" onchange="updateChecklist('dc')">
+                                <span class="text-slate-700">No overnight events for 48–72 hrs.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600" onchange="updateChecklist('dc')">
+                                <span class="text-slate-700">Weight > 1800g.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600" onchange="updateChecklist('dc')">
+                                <span class="text-slate-700">Passed Car Seat Trial.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600" onchange="updateChecklist('dc')">
+                                <span class="text-slate-700"><strong>Open Crib Criteria Met:</strong> Temp ≥36.5, gaining ≥15g/day (3 days), wt >1500g.</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600" onchange="updateChecklist('dc')">
+                                <span class="text-slate-700"><strong>Medications Ordered:</strong> Poly-vi-sol 0.5 ml/day (1 ml with Iron for plain BM).</span>
+                            </label>
+                            <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                                <input type="checkbox" class="mt-1 w-4 h-4 text-teal-600" onchange="updateChecklist('dc')">
+                                <span class="text-slate-700"><strong>DC Exam:</strong> Done right after rounds before circs.</span>
+                            </label>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Unit Rules -->
+                <div class="bg-rose-50 border border-rose-200 rounded-xl p-6 shadow-sm">
+                    <h3 class="text-xl font-black text-rose-800 mb-2 flex items-center gap-2"><span>🛡️</span> Strict Rules of the Unit</h3>
+                    <p class="text-sm text-rose-700 mb-6 font-medium">Follow these strictly to maintain patient safety and unit harmony.</p>
+                    
+                    <ul class="space-y-4 text-sm text-slate-800">
+                        <li class="flex gap-3">
+                            <span class="text-rose-600 text-lg mt-0.5">▪</span>
+                            <div><strong>The Scrub:</strong> Mandatory 3-minute scrub (fingertips to elbows) using nail cleaners before entry.</div>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="text-rose-600 text-lg mt-0.5">▪</span>
+                            <div><strong>The Uniform:</strong> Remove lab coats/long sleeves or keep above elbow. No hoodies. <strong>Only Hurley-branded jackets allowed.</strong></div>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="text-rose-600 text-lg mt-0.5">▪</span>
+                            <div><strong>Nails & Jewelry:</strong> NO artificial nails, shellac, or gel. Polish must be 100% intact. Remove all rings, watches, bracelets.</div>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="text-rose-600 text-lg mt-0.5">▪</span>
+                            <div><strong>Hygiene:</strong> No perfumes/colognes. Foam hands before/after touching any patient or bedside item. Do not enter if ill.</div>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="text-rose-600 text-lg mt-0.5">▪</span>
+                            <div><strong>Phones:</strong> Silent/Vibrate only. Permitted for clinical care only. Clean with wipes at morning huddle.</div>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="text-rose-600 text-lg mt-0.5">▪</span>
+                            <div><strong>Communication:</strong> <span class="font-bold underline text-rose-700">ALWAYS</span> talk to the bedside nurse before initiating any care or exams.</div>
+                        </li>
+                        <li class="flex gap-3">
+                            <span class="text-rose-600 text-lg mt-0.5">▪</span>
+                            <div><strong>Bedside:</strong> No food or drink at bedside; use staff lounge. Use bedside stethoscopes ONLY.</div>
+                        </li>
+                    </ul>
+
+                    <div class="mt-8 bg-white/60 p-4 rounded-lg border border-rose-200">
+                        <h4 class="font-bold text-slate-800 mb-2">💉 Desired Procedures (Ask Early!)</h4>
+                        <ul class="list-disc list-inside text-sm space-y-1">
+                            <li><strong>Intubation:</strong> Express interest early to Attending/RT.</li>
+                            <li><strong>UVC/UAC Lines:</strong> Learn setup and imaging.</li>
+                            <li><strong>Circumcisions:</strong> Notify attending if you want to perform.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- Navigation Logic ---
+        function nav(sectionId) {
+            // Hide all sections
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            // Remove active classes from nav
+            document.querySelectorAll('nav ul button').forEach(el => {
+                el.classList.remove('bg-slate-800', 'text-white', 'border-teal-500');
+                el.classList.add('border-transparent');
+            });
+            
+            // Show target section
+            document.getElementById('sec-' + sectionId).classList.remove('hidden');
+            
+            // Update nav styles (Desktop)
+            const activeBtn = document.getElementById('nav-' + sectionId);
+            if(activeBtn) {
+                activeBtn.classList.add('bg-slate-800', 'text-white', 'border-teal-500');
+                activeBtn.classList.remove('border-transparent');
+            }
+
+            // Render Chart if Nutrition section is opened
+            if(sectionId === 'nutrition' && !window.nutritionChartRendered) {
+                renderNutritionChart();
+                window.nutritionChartRendered = true;
+            }
+        }
+
+        // --- Calculator Logic ---
+        function calculateGIR() {
+            const vol = parseFloat(document.getElementById('gir-vol').value);
+            const dex = parseFloat(document.getElementById('gir-dex').value);
+            const wt = parseFloat(document.getElementById('gir-wt').value);
+            const resultEl = document.getElementById('gir-result');
+
+            if (vol > 0 && dex > 0 && wt > 0) {
+                // Formula: (TPN Vol * % Dextrose decimal) / (Weight * 1.44)
+                const gir = (vol * dex) / (wt * 1.44);
+                resultEl.innerText = gir.toFixed(2);
+                
+                // Color coding based on goal (4-12)
+                if(gir < 4) resultEl.className = "text-3xl font-black text-amber-500";
+                else if(gir > 12) resultEl.className = "text-3xl font-black text-rose-600";
+                else resultEl.className = "text-3xl font-black text-teal-600";
+            } else {
+                resultEl.innerText = "0.00";
+                resultEl.className = "text-3xl font-black text-teal-600";
+            }
+        }
+
+        function calculateTPN() {
+            const tfg = parseFloat(document.getElementById('tpn-tfg').value) || 0;
+            const wt = parseFloat(document.getElementById('tpn-wt').value) || 0;
+            const enteral = parseFloat(document.getElementById('tpn-enteral').value) || 0;
+            const lipids = parseFloat(document.getElementById('tpn-lipids').value) || 0;
+            
+            if (tfg > 0 && wt > 0) {
+                const totalVol = tfg * wt;
+                const tpnVol = totalVol - (enteral + lipids);
+                const hourlyRate = tpnVol / 24;
+
+                document.getElementById('tpn-total-vol').innerText = totalVol.toFixed(1) + " ml/day";
+                document.getElementById('tpn-rate').innerText = hourlyRate > 0 ? hourlyRate.toFixed(1) + " ml/hr" : "0.0 ml/hr";
+            } else {
+                document.getElementById('tpn-total-vol').innerText = "0 ml/day";
+                document.getElementById('tpn-rate').innerText = "0.0 ml/hr";
+            }
+        }
+
+        function calculateFeed() {
+            const inc = parseFloat(document.getElementById('feed-inc').value);
+            const wt = parseFloat(document.getElementById('feed-wt').value);
+            
+            if(inc > 0 && wt > 0) {
+                // Formula: (Daily Increase * Weight) / 8 feeds
+                const perFeed = (inc * wt) / 8;
+                document.getElementById('feed-result').innerText = perFeed.toFixed(1) + " ml";
+            } else {
+                document.getElementById('feed-result').innerText = "0 ml";
+            }
+        }
+
+        // --- Hypoglycemia Wizard Logic ---
+        let hypoState = { symp: null, level: null };
+
+        function setHypoState(key, value) {
+            hypoState[key] = value;
+            
+            if(key === 'symp') {
+                if(value === true) {
+                    document.getElementById('hypo-symp-action').classList.remove('hidden');
+                    document.getElementById('hypo-asymp-level').classList.add('hidden');
+                    document.getElementById('hypo-asymp-action').classList.add('hidden');
+                } else {
+                    document.getElementById('hypo-symp-action').classList.add('hidden');
+                    document.getElementById('hypo-asymp-level').classList.remove('hidden');
+                    document.getElementById('hypo-asymp-action').classList.add('hidden');
+                }
+            } else if (key === 'level') {
+                document.getElementById('hypo-asymp-action').classList.remove('hidden');
+                const box = document.getElementById('hypo-result-box');
+                
+                if(value === 'under25') {
+                    box.className = "bg-rose-50 border-2 border-rose-300 rounded-xl p-6 text-left shadow-sm w-full max-w-lg";
+                    box.innerHTML = `
+                        <h5 class="font-bold text-rose-800 text-lg mb-2 flex items-center gap-2"><span>⚠️</span> Critical Asymptomatic</h5>
+                        <ul class="list-disc pl-5 space-y-1 text-slate-800">
+                            <li><strong>FEED IMMEDIATELY</strong></li>
+                            <li>Recheck in 1 hour</li>
+                            <li class="text-rose-700 mt-2"><strong>If STILL < 25 after feed:</strong> IV D10W Bolus (2ml/kg) + Increase GIR to 6-8.</li>
+                        </ul>
+                    `;
+                } else if (value === 'mid') {
+                    box.className = "bg-amber-50 border-2 border-amber-300 rounded-xl p-6 text-left shadow-sm w-full max-w-lg";
+                    box.innerHTML = `
+                        <h5 class="font-bold text-amber-800 text-lg mb-2 flex items-center gap-2"><span>⚠️</span> Borderline</h5>
+                        <ul class="list-disc pl-5 space-y-1 text-slate-800">
+                            <li><strong>Feed and Recheck</strong></li>
+                            <li>If no improvement after feeding, consider starting IV fluids.</li>
+                        </ul>
+                    `;
+                } else if (value === 'safe') {
+                    box.className = "bg-teal-50 border-2 border-teal-300 rounded-xl p-6 text-left shadow-sm w-full max-w-lg";
+                    box.innerHTML = `
+                        <h5 class="font-bold text-teal-800 text-lg mb-2 flex items-center gap-2"><span>✅</span> Safe Zone</h5>
+                        <p class="text-slate-700">Continue routine care and feeding schedules.</p>
+                    `;
+                }
+            }
+        }
+
+        function resetHypo() {
+            hypoState = { symp: null, level: null };
+            document.getElementById('hypo-symp-action').classList.add('hidden');
+            document.getElementById('hypo-asymp-level').classList.add('hidden');
+            document.getElementById('hypo-asymp-action').classList.add('hidden');
+        }
+
+        // --- Checklist Logic ---
+        function updateChecklist(listId) {
+            const container = document.getElementById(`${listId}-list`);
+            const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+            const total = checkboxes.length;
+            const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+            
+            const progressSpan = document.getElementById(`${listId}-progress`);
+            progressSpan.innerText = `${checked}/${total}`;
+            
+            if(checked === total) {
+                progressSpan.classList.replace('bg-teal-50', 'bg-teal-600');
+                progressSpan.classList.replace('text-teal-600', 'text-white');
+            } else {
+                progressSpan.classList.replace('bg-teal-600', 'bg-teal-50');
+                progressSpan.classList.replace('text-white', 'text-teal-600');
+            }
+        }
+
+        // --- Chart.js Logic ---
+        function renderNutritionChart() {
+            const ctx = document.getElementById('nutritionChart').getContext('2d');
+            
+            // Simulating days to Max (Max is 150-160 TFG, starting at 80-100, inc 20/day)
+            // DOL1: 90, DOL2: 110, DOL3: 130, DOL4: 150 (Max)
+            // Lipids: DOL1: 7.5, DOL2: 12.5, DOL3: 15 (Max)
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['DOL 1', 'DOL 2', 'DOL 3', 'DOL 4 (Max)'],
+                    datasets: [
+                        {
+                            label: 'Total Fluid Goal (ml/kg)',
+                            data: [90, 110, 130, 150],
+                            backgroundColor: 'rgba(13, 148, 136, 0.7)', // teal-600
+                            borderColor: 'rgb(13, 148, 136)',
+                            borderWidth: 1,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Lipid Goal (ml/kg)',
+                            data: [7.5, 12.5, 15, 15],
+                            type: 'line',
+                            backgroundColor: 'rgba(245, 158, 11, 1)', // amber-500
+                            borderColor: 'rgba(245, 158, 11, 1)',
+                            borderWidth: 3,
+                            pointRadius: 5,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) { label += context.parsed.y; }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Fluids (ml/kg)' },
+                            min: 0,
+                            max: 180
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Lipids (ml/kg)' },
+                            min: 0,
+                            max: 20,
+                            grid: { drawOnChartArea: false } // only want the grid lines for one axis
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
